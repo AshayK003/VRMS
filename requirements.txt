@@ -14,9 +14,6 @@ yfinance>=0.2.40
 nsepython>=1.0.5
 tenacity>=8.0,<11.0
 
-# Technical indicators
-pandas_ta>=0.4
-
 # Sentiment analysis
 vaderSentiment>=3.3.2
 feedparser>=6.0

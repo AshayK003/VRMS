@@ -245,7 +245,7 @@ def render_signals_table(signals: list[dict]):
     st.dataframe(
         df,
         hide_index=True,
-        use_container_width=True,
+        width='stretch',
         column_config={
             "Symbol": st.column_config.TextColumn("Symbol", width="medium"),
             "Probability": st.column_config.TextColumn("Prob", width="small"),
@@ -278,11 +278,11 @@ def render_equity_curve(equity_curve: list[float]):
     col1, col2 = st.columns([2, 1])
     
     with col1:
-        st.line_chart(df.set_index("Date")["Equity"], use_container_width=True)
+        st.line_chart(df.set_index("Date")["Equity"], width='stretch')
     
     with col2:
         # Drawdown area
-        st.area_chart(df.set_index("Date")["Drawdown"], use_container_width=True, color="#ef4444")
+        st.area_chart(df.set_index("Date")["Drawdown"], width='stretch', color="#ef4444")
 
 
 def render_metrics(metrics: dict):
@@ -346,8 +346,8 @@ def render_win_rate_by_regime():
     
     st.bar_chart(
         df.set_index("Regime")["Win Rate"],
-        use_container_width=True,
-        color=colors,
+        width='stretch',
+        color=colors[0],
     )
 
 
@@ -362,7 +362,7 @@ def render_paper_trading_tracker():
         return
     
     df = pd.DataFrame(trades)
-    st.dataframe(df, hide_index=True, use_container_width=True)
+    st.dataframe(df, hide_index=True, width='stretch')
 
 
 # ─── Main App ────────────────────────────────────────────────────────────────
@@ -404,7 +404,7 @@ def main():
         st.session_state.last_update = datetime.now().strftime("%Y-%m-%d %H:%M")
         st.markdown(f"`{st.session_state.last_update}`")
         
-        if st.button("Refresh Signals", use_container_width=True):
+        if st.button("Refresh Signals", width='stretch'):
             st.rerun()
     
     # Main content
