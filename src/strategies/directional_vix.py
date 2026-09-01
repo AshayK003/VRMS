@@ -81,15 +81,15 @@ def fetch_data(symbol: str, period: str = "5y") -> pd.DataFrame:
 def generate_directional_signals(
     vix_df: pd.DataFrame,
     nifty_df: pd.DataFrame,
-    vix_high: float = 18.0,
-    vix_low: float = 12.0,
+    vix_high: float = 17.0,
+    vix_low: float = 13.0,
 ) -> list[Signal]:
     """Generate DIRECTIONAL signals based on VIX.
     
     Logic:
-    - VIX > 18 → Fear → BUY (buy the dip)
-    - VIX < 12 → Complacency → SELL (take profits, avoid correction)
-    - VIX 12-18 → Neutral → HOLD (stay invested)
+    - VIX > 17 → Fear → BUY (buy the dip)
+    - VIX < 13 → Complacency → SELL (take profits, avoid correction)
+    - VIX 13-17 → Neutral → HOLD (stay invested)
     """
     # Merge VIX and Nifty
     merged = pd.concat([nifty_df, vix_df], axis=1, join='inner')
@@ -124,8 +124,9 @@ def generate_directional_signals(
             reason = f"VIX={vix:.1f} (complacency zone) → SELL/exit"
             position_size = confidence
         
-        # VIX neutral → HOLD
+        # VIX neutral → Check for momentum opportunities
         else:
+            # In neutral zone, we don't trade
             direction = "HOLD"
             confidence = 0.0
             reason = f"VIX={vix:.1f} (neutral) → HOLD"
