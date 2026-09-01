@@ -1,0 +1,36 @@
+# VRMS — Unified Dependency Stack
+# All versions chosen for compatibility with numpy>=2.0 and scikit-learn>=1.4
+# Excludes: riskfolio-lib, hmmlearn, torch/timesFM (conflicting or unnecessary)
+
+# Core data & ML
+numpy>=2.0
+pandas>=2.2
+scikit-learn>=1.4
+xgboost>=2.0
+scipy>=1.13
+
+# Data sources
+yfinance>=0.2.40
+nsepython>=1.0.5
+tenacity>=8.0,<11.0
+
+# Technical indicators
+pandas_ta>=0.4
+
+# Sentiment analysis
+vaderSentiment>=3.3.2
+feedparser>=6.0
+duckduckgo_search>=8.0
+
+# Dashboard
+streamlit>=1.35
+
+# Logging
+structlog>=26.1.0
+
+# Testing
+pytest>=7.0
+pytest-cov>=4.1
+
+# Utilities
+matplotlib>=3.8
