@@ -18,6 +18,9 @@ from .engineering import (
     compute_atr,
     compute_garch_vol,
 )
+from .fii_dii import compute_fii_dii_features
+from .sentiment import compute_sentiment_features
+from .fundamentals import compute_fundamental_features
 
 logger = logging.getLogger(__name__)
 
@@ -25,12 +28,16 @@ logger = logging.getLogger(__name__)
 def compute_all_features(
     df: pd.DataFrame,
     benchmark: pd.DataFrame | None = None,
+    fii_dii_df: pd.DataFrame | None = None,
+    symbol: str | None = None,
 ) -> pd.DataFrame:
     """Compute all features for a stock.
     
     Args:
         df: Stock OHLCV DataFrame
         benchmark: Benchmark OHLCV DataFrame (e.g., Nifty 50)
+        fii_dii_df: FII/DII flow DataFrame
+        symbol: NSE ticker (for sentiment/fundamentals)
         
     Returns:
         DataFrame with all features
@@ -73,6 +80,11 @@ def compute_all_features(
     atr = compute_atr(df)
     atr_df = pd.DataFrame({'atr': atr}, index=df.index)
     all_features.append(atr_df)
+    
+    # FII/DII features
+    if fii_dii_df is not None:
+        fii_dii_features = compute_fii_dii_features(fii_dii_df)
+        all_features.append(fii_dii_features)
     
     # Combine all features
     combined = pd.concat(all_features, axis=1)
