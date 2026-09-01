@@ -1,4 +1,4 @@
-"""OHLCV data fetching from NSE via nsepython."""
+"""OHLCV data fetching from Yahoo Finance (yfinance) for Indian equities."""
 from __future__ import annotations
 
 import logging
@@ -10,9 +10,38 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 logger = logging.getLogger(__name__)
 
 
+def _clean_yf_df(df: pd.DataFrame) -> pd.DataFrame:
+    """Clean yfinance DataFrame: reset index, rename, tz-naive, numeric."""
+    if df is None or df.empty:
+        return pd.DataFrame()
+    
+    df = df.reset_index()
+    
+    # Handle both 'Date' and 'Datetime' column names
+    date_col = 'Date' if 'Date' in df.columns else 'Datetime'
+    
+    df = df.rename(columns={
+        date_col: 'Date',
+        'Open': 'Open',
+        'High': 'High',
+        'Low': 'Low',
+        'Close': 'Close',
+        'Volume': 'Volume'
+    })
+    
+    df['Date'] = pd.to_datetime(df['Date']).dt.tz_localize(None)
+    df = df.set_index('Date').sort_index()
+    
+    # Ensure numeric columns
+    for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
+        df[col] = pd.to_numeric(df[col], errors='coerce')
+    
+    return df[['Open', 'High', 'Low', 'Close', 'Volume']]
+
+
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
 def fetch_ohlcv(symbol: str, start_date: str, end_date: str) -> pd.DataFrame:
-    """Fetch daily OHLCV data for a symbol from NSE.
+    """Fetch daily OHLCV data for a symbol from Yahoo Finance.
     
     Args:
         symbol: NSE ticker (e.g., 'RELIANCE', 'TCS')
@@ -20,88 +49,67 @@ def fetch_ohlcv(symbol: str, start_date: str, end_date: str) -> pd.DataFrame:
         end_date: End date in 'YYYY-MM-DD' format
         
     Returns:
-        DataFrame with columns: Date, Open, High, Low, Close, Volume
+        DataFrame with columns: Open, High, Low, Close, Volume (tz-naive)
     """
     try:
-        from nsepython import history
+        import yfinance as yf
         
-        # nsepython.history expects symbol and date range
-        df = history.get_history(symbol, start_date, end_date)
+        ticker = yf.Ticker(f"{symbol}.NS")
+        df = ticker.history(start=start_date, end=end_date)
         
         if df is None or df.empty:
             logger.warning(f"No data returned for {symbol}")
             return pd.DataFrame()
         
-        # Standardize column names
-        df = df.rename(columns={
-            'CH_TIMESTAMP': 'Date',
-            'CH_OPENING_PRICE': 'Open',
-            'CH_TRADE_HIGH_PRICE': 'High',
-            'CH_TRADE_LOW_PRICE': 'Low',
-            'CH_CLOSING_PRICE': 'Close',
-            'CH_TOT_TRADED_QTY': 'Volume'
-        })
-        
-        df['Date'] = pd.to_datetime(df['Date'])
-        df = df.set_index('Date').sort_index()
-        
-        # Keep only required columns
-        return df[['Open', 'High', 'Low', 'Close', 'Volume']]
+        return _clean_yf_df(df)
         
     except Exception as e:
         logger.error(f"Failed to fetch OHLCV for {symbol}: {e}")
         return pd.DataFrame()
 
 
-@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
-def fetch_intraday(symbol: str, interval: str = "15m", period: str = "5d") -> pd.DataFrame:
-    """Fetch intraday OHLCV data from Yahoo Finance via yfinance.
+def get_benchmark(start_date: str, end_date: str) -> pd.DataFrame:
+    """Fetch Nifty 50 benchmark data from Yahoo Finance.
     
     Args:
-        symbol: Yahoo ticker (e.g., 'RELIANCE.NS', '^NSEI')
-        interval: Candle interval ('1m', '5m', '15m', '1h')
-        period: Data period ('1d', '5d', '1mo')
+        start_date: Start date in 'YYYY-MM-DD' format
+        end_date: End date in 'YYYY-MM-DD' format
         
     Returns:
-        DataFrame with OHLCV data
+        Nifty 50 OHLCV DataFrame (tz-naive)
     """
     try:
         import yfinance as yf
         
-        ticker = yf.Ticker(symbol)
-        df = ticker.history(period=period, interval=interval)
+        ticker = yf.Ticker("^NSEI")
+        df = ticker.history(start=start_date, end=end_date)
         
         if df is None or df.empty:
+            logger.warning("No benchmark data returned")
             return pd.DataFrame()
         
-        # Standardize column names
-        df = df.rename(columns={
-            'Open': 'Open',
-            'High': 'High',
-            'Low': 'Low',
-            'Close': 'Close',
-            'Volume': 'Volume'
-        })
-        
-        return df[['Open', 'High', 'Low', 'Close', 'Volume']]
+        return _clean_yf_df(df)
         
     except Exception as e:
-        logger.error(f"Failed to fetch intraday for {symbol}: {e}")
+        logger.error(f"Failed to fetch benchmark: {e}")
         return pd.DataFrame()
 
 
 def fetch_vix() -> float | None:
-    """Fetch current India VIX value from NSE.
+    """Fetch current India VIX value from Yahoo Finance.
     
     Returns:
         VIX value or None if fetch fails
     """
     try:
-        from nsepython import nse_get_index_quote
+        import yfinance as yf
         
-        quote = nse_get_index_quote("INDIAVIX")
-        if quote and 'last' in quote:
-            return float(quote['last'])
+        ticker = yf.Ticker("^INDIAVIX")
+        df = ticker.history(period="1d")
+        
+        if df is not None and not df.empty:
+            return float(df['Close'].iloc[-1])
+        
         return None
         
     except Exception as e:

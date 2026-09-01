@@ -26,18 +26,32 @@ def fetch_fii_dii() -> pd.DataFrame:
             logger.warning("No FII/DII data returned")
             return pd.DataFrame()
         
-        # Standardize column names
-        df = df.rename(columns={
-            'date': 'Date',
-            'fii': 'FII',
-            'dii': 'DII',
-            'net': 'Net'
-        })
+        # nse_fiidii returns: buyValue, category, date, netValue, sellValue
+        # category is 'FII/FPI' or 'DII'
+        # We need to pivot this into FII, DII, Net columns
         
-        df['Date'] = pd.to_datetime(df['Date'])
-        df = df.set_index('Date').sort_index()
+        df['date'] = pd.to_datetime(df['date'], format='%d-%b-%Y')
         
-        return df[['FII', 'DII', 'Net']]
+        # Pivot: separate FII and DII rows
+        fii_rows = df[df['category'] == 'FII/FPI'].copy()
+        dii_rows = df[df['category'] == 'DII'].copy()
+        
+        result = pd.DataFrame(index=df['date'].unique())
+        result.index.name = 'Date'
+        
+        if not fii_rows.empty:
+            fii_rows = fii_rows.set_index('date')
+            result['FII'] = fii_rows['netValue'].astype(float)
+        
+        if not dii_rows.empty:
+            dii_rows = dii_rows.set_index('date')
+            result['DII'] = dii_rows['netValue'].astype(float)
+        
+        result['Net'] = result['FII'].fillna(0).astype(float) + result['DII'].fillna(0).astype(float)
+        
+        result = result.sort_index()
+        
+        return result[['FII', 'DII', 'Net']]
         
     except Exception as e:
         logger.error(f"Failed to fetch FII/DII: {e}")

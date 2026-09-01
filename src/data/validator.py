@@ -46,6 +46,8 @@ class DataValidator:
         
         # Check for stale data
         last_date = pd.Timestamp(df.index.max())
+        if last_date.tzinfo is not None:
+            last_date = last_date.tz_localize(None)
         days_since_last = (pd.Timestamp.now() - last_date).days
         if days_since_last > self.max_stale_days:
             return False, f"Data is {days_since_last} days stale"
@@ -79,6 +81,8 @@ class DataValidator:
         
         # Check for stale data
         last_date = pd.Timestamp(df.index.max())
+        if last_date.tzinfo is not None:
+            last_date = last_date.tz_localize(None)
         days_since_last = (pd.Timestamp.now() - last_date).days
         if days_since_last > self.max_stale_days:
             return False, f"FII/DII data is {days_since_last} days stale"

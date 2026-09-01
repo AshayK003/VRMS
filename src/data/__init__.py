@@ -1,5 +1,5 @@
 """VRMS data package."""
-from .ohlcv import fetch_ohlcv, fetch_intraday, fetch_vix
+from .ohlcv import fetch_ohlcv, get_benchmark, fetch_vix
 from .fii_dii import fetch_fii_dii, get_fii_dii_lagged
 from .validator import DataValidator
 from .constituents import get_constituents_on_date, filter_by_constituents
