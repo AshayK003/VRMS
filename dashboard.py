@@ -360,6 +360,15 @@ def render_equity_curve():
 
 def main():
     """Main app entry point."""
+    # Disclaimer banner at top
+    st.warning(
+        "⚠️ **Educational purposes only.** Not financial advice. "
+        "The author is not a SEBI-registered advisor. "
+        "70% of intraday traders lose money (SEBI data). "
+        "You are solely responsible for all trading decisions.",
+        icon="⚠️",
+    )
+    
     # Sidebar
     with st.sidebar:
         st.markdown("### VRMS")
@@ -421,6 +430,25 @@ def main():
         render_equity_curve()
     with col2:
         render_metrics(metrics)
+    
+    # Disclaimer
+    st.markdown("---")
+    with st.expander("⚠️ Legal Disclaimer — Read Before Using", expanded=False):
+        st.markdown(
+            """
+            **THIS SOFTWARE IS FOR EDUCATIONAL AND INFORMATIONAL PURPOSES ONLY.**
+            
+            - The author is **not a SEBI-registered investment advisor**
+            - Nothing here constitutes **investment advice, financial advice, or trading advice**
+            - All signals are **hypothetical** — past performance does not guarantee future results
+            - Data comes from third-party APIs and may be **delayed or inaccurate**
+            - **70% of intraday traders lose money** (SEBI data)
+            - You are **solely responsible** for all trading decisions
+            - The author is **not liable** for any losses arising from use of this software
+            
+            **By using this software, you agree to the full disclaimer and license terms.**
+            """
+        )
     
     # Footer
     st.markdown("---")
