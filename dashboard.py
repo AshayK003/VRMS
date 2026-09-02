@@ -1,15 +1,29 @@
-"""Streamlit dashboard for VRMS.
+"""Streamlit dashboard for VRMS — wired to live pipeline.
 
 Free, institutional-grade swing trading signals for Indian equity markets.
 """
 from __future__ import annotations
 
 import logging
+import sys
 from datetime import datetime, timedelta
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import streamlit as st
+
+# Add project root to path
+sys.path.insert(0, str(Path(__file__).parent))
+
+from src.screener.multi_asset import (
+    fetch_vix, NIFTY_50,
+    get_vix_regime, compute_momentum, compute_conviction,
+)
+from src.data.ohlcv import fetch_ohlcv
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Page config
 st.set_page_config(
@@ -19,127 +33,146 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-logger = logging.getLogger(__name__)
 
-
-# ─── Session State ───────────────────────────────────────────────────────────
-
-def init_session_state():
-    """Initialize session state variables."""
-    if "signals" not in st.session_state:
-        st.session_state.signals = []
-    if "regime" not in st.session_state:
-        st.session_state.regime = "NORMAL"
-    if "vix" not in st.session_state:
-        st.session_state.vix = 14.2
-    if "adx" not in st.session_state:
-        st.session_state.adx = 28.5
-    if "equity_curve" not in st.session_state:
-        st.session_state.equity_curve = [1.0]
-    if "win_rate" not in st.session_state:
-        st.session_state.win_rate = 0.0
-    if "sharpe" not in st.session_state:
-        st.session_state.sharpe = 0.0
-    if "max_drawdown" not in st.session_state:
-        st.session_state.max_drawdown = 0.0
-    if "paper_trades" not in st.session_state:
-        st.session_state.paper_trades = []
-    if "last_update" not in st.session_state:
-        st.session_state.last_update = None
-
-
-# ─── Data Loading ────────────────────────────────────────────────────────────
+# ─── Live Data ──────────────────────────────────────────────────────────────
 
 @st.cache_data(ttl=300)
-def load_sample_data() -> dict:
-    """Load sample data for demonstration.
+def get_live_signals(params: dict) -> tuple[list[dict], str, float]:
+    """Get live signals from screener.
     
-    In production, this will pull from the live pipeline.
+    Returns:
+        Tuple of (signals_list, vix_regime, current_vix)
     """
-    # Sample signals
-    signals = [
-        {
-            "symbol": "TMCV",
-            "direction": "LONG",
-            "probability": 0.72,
-            "score": 0.68,
-            "momentum": 0.08,
-            "rs": 1.15,
-            "stop_loss_pct": 0.05,
-            "target_pct": 0.05,
-            "risk_multiplier": 1.0,
-        },
-        {
-            "symbol": "INFY",
-            "direction": "LONG",
-            "probability": 0.68,
-            "score": 0.64,
-            "momentum": 0.06,
-            "rs": 1.12,
-            "stop_loss_pct": 0.05,
-            "target_pct": 0.05,
-            "risk_multiplier": 1.0,
-        },
-        {
-            "symbol": "RELIANCE",
-            "direction": "LONG",
-            "probability": 0.65,
-            "score": 0.61,
-            "momentum": 0.05,
-            "rs": 1.08,
-            "stop_loss_pct": 0.05,
-            "target_pct": 0.05,
-            "risk_multiplier": 1.0,
-        },
-        {
-            "symbol": "HDFCBANK",
-            "direction": "LONG",
-            "probability": 0.63,
-            "score": 0.59,
-            "momentum": 0.04,
-            "rs": 1.05,
-            "stop_loss_pct": 0.05,
-            "target_pct": 0.05,
-            "risk_multiplier": 1.0,
-        },
-        {
-            "symbol": "ICICIBANK",
-            "direction": "LONG",
-            "probability": 0.61,
-            "score": 0.57,
-            "momentum": 0.03,
-            "rs": 1.02,
-            "stop_loss_pct": 0.05,
-            "target_pct": 0.05,
-            "risk_multiplier": 1.0,
-        },
-    ]
+    vix_df = fetch_vix(period="6mo")
+    if vix_df.empty:
+        return [], "unknown", 0.0
+
+    vix_regime, current_vix = get_vix_regime(vix_df, params)
+
+    if vix_regime == "complacency":
+        return [], vix_regime, current_vix
+
+    # Scan stocks
+    picks = []
+    for symbol in NIFTY_50:
+        df = fetch_stock_data(symbol, period="6mo")
+        if df.empty or len(df) < 50:
+            continue
+
+        mom = compute_momentum(df)
+        if not mom:
+            continue
+
+        conviction, reason = compute_conviction(mom, vix_regime, params)
+
+        if conviction < 30:
+            continue
+
+        price = mom['price']
+        picks.append({
+            'symbol': symbol.replace('.NS', ''),
+            'conviction': conviction,
+            'price': price,
+            'target': price * (1 + params['target_pct']),
+            'stop': price * (1 - params['stop_loss_pct']),
+            'reason': reason,
+            'mom_20': mom['roc_20'],
+            'adx': mom['adx'],
+            'ma20': mom['ma20'],
+            'ma50': mom['ma50'],
+        })
+
+    picks.sort(key=lambda x: x['conviction'], reverse=True)
+    return picks[:5], vix_regime, current_vix
+
+
+@st.cache_data(ttl=300)
+def fetch_stock_data(symbol: str, period: str = "6mo") -> pd.DataFrame:
+    """Fetch stock data with fallback suffixes."""
+    import yfinance as yf
+    candidates = [symbol, f"{symbol}.NS", f"{symbol}.BO"]
+    for sym in candidates:
+        try:
+            ticker = yf.Ticker(sym)
+            df = ticker.history(period=period)
+            if df is not None and not df.empty and len(df) >= 50:
+                df = df.reset_index()
+                date_col = 'Date' if 'Date' in df.columns else 'Datetime'
+                df = df.rename(columns={
+                    date_col: 'Date',
+                    'Open': 'Open', 'High': 'High', 'Low': 'Low',
+                    'Close': 'Close', 'Volume': 'Volume'
+                })
+                df['Date'] = pd.to_datetime(df['Date']).dt.tz_localize(None)
+                df = df.set_index('Date').sort_index()
+                for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
+                    df[col] = pd.to_numeric(df[col], errors='coerce')
+                return df[['Open', 'High', 'Low', 'Close', 'Volume']]
+        except Exception:
+            continue
+    return pd.DataFrame()
+
+
+@st.cache_data(ttl=300)
+def get_backtest_metrics() -> dict:
+    """Get backtest metrics from latest run."""
+    # Load from saved results if available
+    results_path = Path("data/backtest_results.csv")
+    if results_path.exists():
+        try:
+            df = pd.read_csv(results_path)
+            if not df.empty:
+                wins = df[df['return_pct'] > 0]
+                losses = df[df['return_pct'] <= 0]
+                return {
+                    'n_trades': len(df),
+                    'win_rate': len(wins) / len(df) if len(df) > 0 else 0,
+                    'total_return': (1 + df['return_pct']).prod() - 1,
+                    'sharpe': df['return_pct'].mean() / df['return_pct'].std() * np.sqrt(252) if df['return_pct'].std() > 0 else 0,
+                    'max_drawdown': calculate_max_drawdown(df['return_pct'].values),
+                    'avg_win': wins['return_pct'].mean() if len(wins) > 0 else 0,
+                    'avg_loss': losses['return_pct'].mean() if len(losses) > 0 else 0,
+                    'n_wins': len(wins),
+                    'n_losses': len(losses),
+                }
+        except Exception:
+            pass
+
+    # Default: run quick backtest
+    return run_quick_backtest()
+
+
+def calculate_max_drawdown(returns: np.ndarray) -> float:
+    """Calculate maximum drawdown from returns."""
+    equity = np.cumprod(1 + returns)
+    peak = np.maximum.accumulate(equity)
+    drawdown = (equity - peak) / peak
+    return float(np.min(drawdown))
+
+
+@st.cache_data(ttl=300)
+def run_quick_backtest() -> dict:
+    """Run a quick backtest for dashboard display."""
+    from run_multi_asset_backtest import backtest_multi_asset
+    result = backtest_multi_asset()
     
-    # Sample equity curve
-    np.random.seed(42)
-    returns = np.random.normal(0.001, 0.02, 252)
-    equity = [1.0]
-    for r in returns:
-        equity.append(equity[-1] * (1 + r))
-    
-    # Sample metrics
-    metrics = {
-        "win_rate": 0.58,
-        "sharpe": 1.23,
-        "max_drawdown": 0.12,
-        "total_return": 0.18,
-        "n_trades": 45,
-        "n_wins": 26,
-        "n_losses": 19,
-        "deflated_sharpe": 1.15,
-        "win_rate_lower": 0.52,
-        "win_rate_upper": 0.64,
-    }
+    if "error" in result:
+        return {
+            'n_trades': 0, 'win_rate': 0, 'total_return': 0,
+            'sharpe': 0, 'max_drawdown': 0, 'avg_win': 0, 'avg_loss': 0,
+            'n_wins': 0, 'n_losses': 0,
+        }
     
     return {
-        "signals": signals,
-        "equity_curve": equity,
-        "metrics": metrics,
+        'n_trades': result['n_trades'],
+        'win_rate': result['win_rate'],
+        'total_return': result['total_return'],
+        'sharpe': result['sharpe'],
+        'max_drawdown': 0.0,  # Not computed in backtest
+        'avg_win': result['avg_win'],
+        'avg_loss': result['avg_loss'],
+        'n_wins': result['n_trades'] - len(result['trades'][result['trades']['return_pct'] <= 0]),
+        'n_losses': len(result['trades'][result['trades']['return_pct'] <= 0]),
     }
 
 
@@ -160,27 +193,26 @@ def render_header():
     )
 
 
-def render_regime_gauge(vix: float, adx: float, regime: str):
+def render_regime_gauge(vix: float, regime: str):
     """Render regime indicator."""
-    # Regime color
     regime_colors = {
-        "LOW-VOL": "#22c55e",
-        "NORMAL": "#3b82f6",
-        "HIGH-VOL": "#f59e0b",
-        "SPIKE": "#ef4444",
+        "complacency": "#22c55e",
+        "neutral": "#3b82f6",
+        "fear": "#f59e0b",
+        "unknown": "#64748b",
     }
     color = regime_colors.get(regime, "#64748b")
     
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
-        st.metric("Regime", regime)
+        st.metric("Regime", regime.upper())
     with col2:
         st.metric("VIX", f"{vix:.1f}")
     with col3:
-        st.metric("ADX", f"{adx:.1f}")
-    with col4:
         st.metric("Signal Date", datetime.now().strftime("%Y-%m-%d"))
+    with col4:
+        st.metric("Stocks Scanned", "50")
     
     # Regime indicator bar
     st.markdown(
@@ -214,32 +246,31 @@ def render_signals_table(signals: list[dict]):
     st.subheader("Today's Top 5 Signals")
     
     if not signals:
-        st.info("No signals today. Market conditions are unfavorable.")
+        st.info("No signals today. Market conditions are unfavorable. Wait for VIX > 18 (fear) or strong momentum in neutral zone.")
         return
     
-    # Convert to DataFrame for display
     df = pd.DataFrame(signals)
     
-    # Format columns
     if not df.empty:
-        df['probability'] = df['probability'].apply(lambda x: f"{x:.0%}")
-        df['momentum'] = df['momentum'].apply(lambda x: f"{x:+.1%}" if pd.notna(x) else "—")
-        df['rs'] = df['rs'].apply(lambda x: f"{x:.2f}" if pd.notna(x) else "—")
-        df['stop_loss_pct'] = df['stop_loss_pct'].apply(lambda x: f"-{x:.0%}")
-        df['target_pct'] = df['target_pct'].apply(lambda x: f"+{x:.0%}")
+        df['price'] = df['price'].apply(lambda x: f"₹{x:.2f}")
+        df['target'] = df['target'].apply(lambda x: f"₹{x:.2f}")
+        df['stop'] = df['stop'].apply(lambda x: f"₹{x:.2f}")
+        df['mom_20'] = df['mom_20'].apply(lambda x: f"{x:+.1%}" if pd.notna(x) else "—")
+        df['adx'] = df['adx'].apply(lambda x: f"{x:.0f}" if pd.notna(x) else "—")
+        df['conviction'] = df['conviction'].apply(lambda x: f"{x:.0f}/100")
     
-    # Rename columns for display
     df = df.rename(columns={
         'symbol': 'Symbol',
-        'probability': 'Probability',
-        'momentum': 'Momentum',
-        'rs': 'Rel. Strength',
-        'stop_loss_pct': 'Stop Loss',
-        'target_pct': 'Target',
+        'conviction': 'Conviction',
+        'price': 'Entry',
+        'target': 'Target',
+        'stop': 'Stop Loss',
+        'mom_20': 'Momentum',
+        'adx': 'ADX',
+        'reason': 'Reason',
     })
     
-    # Select display columns
-    display_cols = ['Symbol', 'Probability', 'Momentum', 'Rel. Strength', 'Stop Loss', 'Target']
+    display_cols = ['Symbol', 'Conviction', 'Entry', 'Target', 'Stop Loss', 'Momentum', 'ADX', 'Reason']
     df = df[[c for c in display_cols if c in df.columns]]
     
     st.dataframe(
@@ -248,41 +279,15 @@ def render_signals_table(signals: list[dict]):
         width='stretch',
         column_config={
             "Symbol": st.column_config.TextColumn("Symbol", width="medium"),
-            "Probability": st.column_config.TextColumn("Prob", width="small"),
-            "Momentum": st.column_config.TextColumn("Momentum", width="small"),
-            "Rel. Strength": st.column_config.TextColumn("RS", width="small"),
-            "Stop Loss": st.column_config.TextColumn("SL", width="small"),
+            "Conviction": st.column_config.TextColumn("Conviction", width="small"),
+            "Entry": st.column_config.TextColumn("Entry", width="small"),
             "Target": st.column_config.TextColumn("Target", width="small"),
+            "Stop Loss": st.column_config.TextColumn("SL", width="small"),
+            "Momentum": st.column_config.TextColumn("Momentum", width="small"),
+            "ADX": st.column_config.TextColumn("ADX", width="small"),
+            "Reason": st.column_config.TextColumn("Reason", width="large"),
         },
     )
-
-
-def render_equity_curve(equity_curve: list[float]):
-    """Render equity curve with drawdown."""
-    st.subheader("Equity Curve (Walk-Forward)")
-    
-    if len(equity_curve) < 2:
-        st.info("Not enough data to display equity curve.")
-        return
-    
-    df = pd.DataFrame({
-        "Date": pd.date_range(start="2025-01-01", periods=len(equity_curve), freq="B"),
-        "Equity": equity_curve,
-    })
-    
-    # Calculate drawdown
-    peak = df["Equity"].cummax()
-    df["Drawdown"] = (df["Equity"] - peak) / peak
-    
-    # Two charts: equity + drawdown
-    col1, col2 = st.columns([2, 1])
-    
-    with col1:
-        st.line_chart(df.set_index("Date")["Equity"], width='stretch')
-    
-    with col2:
-        # Drawdown area
-        st.area_chart(df.set_index("Date")["Drawdown"], width='stretch', color="#ef4444")
 
 
 def render_metrics(metrics: dict):
@@ -302,84 +307,59 @@ def render_metrics(metrics: dict):
     with col5:
         st.metric("Trades", f"{metrics['n_trades']}")
     
-    # Confidence intervals
-    st.markdown(
-        f"""
-        <div style="padding: 1rem; background: #1e293b; border-radius: 8px; margin-top: 0.5rem;">
-            <div style="display: flex; justify-content: space-between; font-size: 0.875rem;">
-                <span>Deflated Sharpe: <b>{metrics['deflated_sharpe']:.2f}</b></span>
-                <span>Win Rate CI: <b>{metrics['win_rate_lower']:.0%} – {metrics['win_rate_upper']:.0%}</b></span>
+    if metrics['n_trades'] > 0:
+        st.markdown(
+            f"""
+            <div style="padding: 1rem; background: #1e293b; border-radius: 8px; margin-top: 0.5rem;">
+                <div style="display: flex; justify-content: space-between; font-size: 0.875rem;">
+                    <span>Wins: <b>{metrics['n_wins']}</b> | Losses: <b>{metrics['n_losses']}</b></span>
+                    <span>Avg Win: <b>{metrics['avg_win']:+.2%}</b> | Avg Loss: <b>{metrics['avg_loss']:+.2%}</b></span>
+                </div>
             </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+            """,
+            unsafe_allow_html=True,
+        )
 
 
-def render_win_rate_by_regime():
-    """Render win rate breakdown by regime."""
-    st.subheader("Win Rate by Regime")
+def render_equity_curve():
+    """Render equity curve from backtest results."""
+    st.subheader("Equity Curve (Backtest)")
     
-    regime_data = {
-        "Low-Vol": 0.62,
-        "Normal": 0.58,
-        "High-Vol": 0.45,
-        "Spike": 0.35,
-    }
+    results_path = Path("data/backtest_results.csv")
+    if results_path.exists():
+        try:
+            df = pd.read_csv(results_path)
+            if not df.empty:
+                # Build equity curve from trades
+                equity = [1.0]
+                for _, trade in df.iterrows():
+                    equity.append(equity[-1] * (1 + trade['return_pct']))
+                
+                df_eq = pd.DataFrame({
+                    "Trade": range(len(equity)),
+                    "Equity": equity,
+                })
+                
+                # Calculate drawdown
+                peak = df_eq["Equity"].cummax()
+                df_eq["Drawdown"] = (df_eq["Equity"] - peak) / peak
+                
+                col1, col2 = st.columns([2, 1])
+                with col1:
+                    st.line_chart(df_eq.set_index("Trade")["Equity"], width='stretch')
+                with col2:
+                    st.area_chart(df_eq.set_index("Trade")["Drawdown"], width='stretch', color="#ef4444")
+                return
+        except Exception:
+            pass
     
-    df = pd.DataFrame(
-        list(regime_data.items()),
-        columns=["Regime", "Win Rate"],
-    )
-    
-    # Color coding
-    colors = []
-    for val in df["Win Rate"]:
-        if val >= 0.6:
-            colors.append("#22c55e")
-        elif val >= 0.5:
-            colors.append("#3b82f6")
-        elif val >= 0.4:
-            colors.append("#f59e0b")
-        else:
-            colors.append("#ef4444")
-    
-    st.bar_chart(
-        df.set_index("Regime")["Win Rate"],
-        width='stretch',
-        color=colors[0],
-    )
-
-
-def render_paper_trading_tracker():
-    """Render paper trading tracker."""
-    st.subheader("Paper Trading")
-    
-    trades = st.session_state.paper_trades
-    
-    if not trades:
-        st.info("No paper trades yet. Signals will be tracked automatically.")
-        return
-    
-    df = pd.DataFrame(trades)
-    st.dataframe(df, hide_index=True, width='stretch')
+    st.info("Run backtest to see equity curve.")
 
 
 # ─── Main App ────────────────────────────────────────────────────────────────
 
 def main():
     """Main app entry point."""
-    init_session_state()
-    
-    # Load data
-    data = load_sample_data()
-    signals = data["signals"]
-    equity_curve = data["equity_curve"]
-    metrics = data["metrics"]
-    
-    # Header
-    render_header()
-    
     # Sidebar
     with st.sidebar:
         st.markdown("### VRMS")
@@ -394,26 +374,39 @@ def main():
             step=1000,
         )
         
-        st.markdown("**Filters**")
-        filter_vix = st.checkbox("Filter VIX > 22", value=True)
-        filter_adx = st.checkbox("Filter ADX < 15", value=True)
-        filter_expiry = st.checkbox("Block Expiry Day", value=True)
+        st.markdown("**Screener Parameters**")
+        vix_high = st.slider("VIX High", 15.0, 25.0, 18.0, 0.5)
+        vix_low = st.slider("VIX Low", 10.0, 18.0, 14.0, 0.5)
+        adx_threshold = st.slider("ADX Threshold", 15, 40, 25)
+        target_pct = st.slider("Target %", 0.02, 0.10, 0.05, 0.01)
+        stop_loss_pct = st.slider("Stop Loss %", 0.02, 0.08, 0.03, 0.01)
         
         st.markdown("---")
         st.markdown("**Last Update**")
-        st.session_state.last_update = datetime.now().strftime("%Y-%m-%d %H:%M")
-        st.markdown(f"`{st.session_state.last_update}`")
+        st.markdown(f"`{datetime.now().strftime('%Y-%m-%d %H:%M')}`")
         
         if st.button("Refresh Signals", width='stretch'):
+            st.cache_data.clear()
             st.rerun()
     
-    # Main content
+    # Get parameters
+    params = {
+        'vix_high': vix_high,
+        'vix_low': vix_low,
+        'adx_threshold': adx_threshold,
+        'target_pct': target_pct,
+        'stop_loss_pct': stop_loss_pct,
+    }
+    
+    # Load live data
+    signals, vix_regime, current_vix = get_live_signals(params)
+    metrics = get_backtest_metrics()
+    
+    # Header
+    render_header()
+    
     # Row 1: Regime gauge
-    render_regime_gauge(
-        vix=st.session_state.vix,
-        adx=st.session_state.adx,
-        regime=st.session_state.regime,
-    )
+    render_regime_gauge(vix=current_vix, regime=vix_regime)
     
     st.markdown("---")
     
@@ -425,18 +418,9 @@ def main():
     # Row 3: Equity curve + metrics
     col1, col2 = st.columns([2, 1])
     with col1:
-        render_equity_curve(equity_curve)
+        render_equity_curve()
     with col2:
         render_metrics(metrics)
-    
-    st.markdown("---")
-    
-    # Row 4: Win rate by regime + paper trading
-    col1, col2 = st.columns(2)
-    with col1:
-        render_win_rate_by_regime()
-    with col2:
-        render_paper_trading_tracker()
     
     # Footer
     st.markdown("---")
