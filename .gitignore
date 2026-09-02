@@ -1,20 +1,35 @@
-# Gitignored — internal files
-internals/
+# VRMS — Git Ignore
 
 # Python
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
-*.egg-info/
-dist/
-build/
-.eggs/
-
-# Virtual env
+.Python
 .venv/
 venv/
 env/
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+*.log
+
+# Data (generated at runtime)
+data/raw/
+data/processed/
+data/*.csv
+data/*.json
+data/*.jsonl
+.cache/
+
+# Internal files (not for public repo)
+internals/
 
 # IDE
 .vscode/
@@ -26,20 +41,7 @@ env/
 .DS_Store
 Thumbs.db
 
-# Streamlit
-.streamlit/
-
-# Logs
-*.log
-
-# Data (generated)
-data/raw/
-data/processed/
-
-# Models
-models/*.pkl
-models/*.joblib
-
 # Secrets
 .env
-.env.local
+*.key
+*.secret
