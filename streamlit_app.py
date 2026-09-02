@@ -38,53 +38,57 @@ st.set_page_config(
 # ─── Live Data ──────────────────────────────────────────────────────────────
 
 @st.cache_data(ttl=300)
-def get_live_signals(params: dict) -> tuple[list[dict], str, float]:
+def get_live_signals(params: dict) -> tuple[list[dict], str, float, str | None]:
     """Get live signals from screener.
     
     Returns:
-        Tuple of (signals_list, vix_regime, current_vix)
+        Tuple of (signals_list, vix_regime, current_vix, error_message)
     """
-    vix_df = fetch_vix(period="6mo")
-    if vix_df.empty:
-        return [], "unknown", 0.0
+    try:
+        vix_df = fetch_vix(period="6mo")
+        if vix_df.empty:
+            return [], "unknown", 0.0, "Failed to fetch VIX data. Check internet connection."
 
-    vix_regime, current_vix = get_vix_regime(vix_df, params)
+        vix_regime, current_vix = get_vix_regime(vix_df, params)
 
-    if vix_regime == "complacency":
-        return [], vix_regime, current_vix
+        if vix_regime == "complacency":
+            return [], vix_regime, current_vix, None
 
-    # Scan stocks
-    picks = []
-    for symbol in NIFTY_50:
-        df = fetch_stock_data(symbol, period="6mo")
-        if df.empty or len(df) < 50:
-            continue
+        # Scan stocks
+        picks = []
+        for symbol in NIFTY_50:
+            df = fetch_stock_data(symbol, period="6mo")
+            if df.empty or len(df) < 50:
+                continue
 
-        mom = compute_momentum(df)
-        if not mom:
-            continue
+            mom = compute_momentum(df)
+            if not mom:
+                continue
 
-        conviction, reason = compute_conviction(mom, vix_regime, params)
+            conviction, reason = compute_conviction(mom, vix_regime, params)
 
-        if conviction < 30:
-            continue
+            if conviction < 30:
+                continue
 
-        price = mom['price']
-        picks.append({
-            'symbol': symbol.replace('.NS', ''),
-            'conviction': conviction,
-            'price': price,
-            'target': price * (1 + params['target_pct']),
-            'stop': price * (1 - params['stop_loss_pct']),
-            'reason': reason,
-            'mom_20': mom['roc_20'],
-            'adx': mom['adx'],
-            'ma20': mom['ma20'],
-            'ma50': mom['ma50'],
-        })
+            price = mom['price']
+            picks.append({
+                'symbol': symbol.replace('.NS', ''),
+                'conviction': conviction,
+                'price': price,
+                'target': price * (1 + params['target_pct']),
+                'stop': price * (1 - params['stop_loss_pct']),
+                'reason': reason,
+                'mom_20': mom['roc_20'],
+                'adx': mom['adx'],
+                'ma20': mom['ma20'],
+                'ma50': mom['ma50'],
+            })
 
-    picks.sort(key=lambda x: x['conviction'], reverse=True)
-    return picks[:5], vix_regime, current_vix
+        picks.sort(key=lambda x: x['conviction'], reverse=True)
+        return picks[:5], vix_regime, current_vix, None
+    except Exception as e:
+        logger.error(f"Signal fetch failed: {e}")
+        return [], "unknown", 0.0, f"Error fetching data: {str(e)}"
 
 
 @st.cache_data(ttl=300)
@@ -117,7 +121,6 @@ def fetch_stock_data(symbol: str, period: str = "6mo") -> pd.DataFrame:
 @st.cache_data(ttl=300)
 def get_backtest_metrics() -> dict:
     """Get backtest metrics from latest run."""
-    # Load from saved results if available
     results_path = Path("data/backtest_results.csv")
     if results_path.exists():
         try:
@@ -139,8 +142,11 @@ def get_backtest_metrics() -> dict:
         except Exception:
             pass
 
-    # Default: run quick backtest
-    return run_quick_backtest()
+    return {
+        'n_trades': 0, 'win_rate': 0, 'total_return': 0,
+        'sharpe': 0, 'max_drawdown': 0, 'avg_win': 0, 'avg_loss': 0,
+        'n_wins': 0, 'n_losses': 0,
+    }
 
 
 def calculate_max_drawdown(returns: np.ndarray) -> float:
@@ -149,32 +155,6 @@ def calculate_max_drawdown(returns: np.ndarray) -> float:
     peak = np.maximum.accumulate(equity)
     drawdown = (equity - peak) / peak
     return float(np.min(drawdown))
-
-
-@st.cache_data(ttl=300)
-def run_quick_backtest() -> dict:
-    """Run a quick backtest for dashboard display."""
-    from run_multi_asset_backtest import backtest_multi_asset
-    result = backtest_multi_asset()
-    
-    if "error" in result:
-        return {
-            'n_trades': 0, 'win_rate': 0, 'total_return': 0,
-            'sharpe': 0, 'max_drawdown': 0, 'avg_win': 0, 'avg_loss': 0,
-            'n_wins': 0, 'n_losses': 0,
-        }
-    
-    return {
-        'n_trades': result['n_trades'],
-        'win_rate': result['win_rate'],
-        'total_return': result['total_return'],
-        'sharpe': result['sharpe'],
-        'max_drawdown': 0.0,  # Not computed in backtest
-        'avg_win': result['avg_win'],
-        'avg_loss': result['avg_loss'],
-        'n_wins': result['n_trades'] - len(result['trades'][result['trades']['return_pct'] <= 0]),
-        'n_losses': len(result['trades'][result['trades']['return_pct'] <= 0]),
-    }
 
 
 # ─── Components ──────────────────────────────────────────────────────────────
@@ -242,12 +222,25 @@ def render_regime_gauge(vix: float, regime: str):
     )
 
 
-def render_signals_table(signals: list[dict]):
+def render_signals_table(signals: list[dict], regime: str, error: str | None):
     """Render the daily signals table."""
     st.subheader("Today's Top 5 Signals")
     
+    # H2: Error feedback
+    if error:
+        st.error(f"⚠️ {error}")
+        return
+    
+    # M6: Differentiate empty states
     if not signals:
-        st.info("No signals today. Market conditions are unfavorable. Wait for VIX > 18 (fear) or strong momentum in neutral zone.")
+        if regime == "complacency":
+            st.info("😴 **Complacency zone** — VIX is low (<14). Market is too calm. Wait for VIX > 18 (fear) for high-conviction signals.")
+        elif regime == "neutral":
+            st.info("😐 **Neutral zone** — VIX is between 14-18. No clear edge. Wait for fear zone or strong momentum.")
+        elif regime == "unknown":
+            st.warning("⚠️ Unable to determine market regime. Data may be unavailable.")
+        else:
+            st.info(f"**{regime.upper()} zone** — No high-conviction picks found today. Try adjusting parameters.")
         return
     
     df = pd.DataFrame(signals)
@@ -292,31 +285,69 @@ def render_signals_table(signals: list[dict]):
 
 
 def render_win_rate_by_regime():
-    """Render win rate breakdown by regime."""
+    """Render win rate breakdown by regime (computed from actual backtest data)."""
     st.subheader("Win Rate by Regime")
     
-    regime_data = {
-        "Fear": 0.65,
-        "Neutral": 0.58,
-        "Complacency": 0.45,
-    }
+    # M2: Compute actual win rate by regime
+    results_path = Path("data/backtest_results.csv")
+    vix_path = Path("data/vix_history.csv")
     
-    df = pd.DataFrame({
-        "Regime": list(regime_data.keys()),
-        "Win Rate": list(regime_data.values()),
-    })
+    if results_path.exists() and vix_path.exists():
+        try:
+            trades_df = pd.read_csv(results_path)
+            vix_df = pd.read_csv(vix_path)
+            
+            if not trades_df.empty and not vix_df.empty:
+                # Merge trades with VIX data at entry date
+                trades_df['entry_date'] = pd.to_datetime(trades_df['entry_date'])
+                vix_df['date'] = pd.to_datetime(vix_df['date'])
+                
+                merged = trades_df.merge(vix_df, left_on='entry_date', right_on='date', how='left')
+                
+                # Classify by regime
+                def classify_regime(vix):
+                    if pd.isna(vix):
+                        return "Unknown"
+                    elif vix > 18:
+                        return "Fear"
+                    elif vix > 14:
+                        return "Neutral"
+                    else:
+                        return "Complacency"
+                
+                merged['regime'] = merged['vix'].apply(classify_regime)
+                
+                # Compute win rate by regime
+                win_rates = {}
+                for regime in ["Fear", "Neutral", "Complacency"]:
+                    regime_trades = merged[merged['regime'] == regime]
+                    if len(regime_trades) > 0:
+                        wins = len(regime_trades[regime_trades['return_pct'] > 0])
+                        win_rates[regime] = wins / len(regime_trades)
+                
+                if win_rates:
+                    df = pd.DataFrame({
+                        "Regime": list(win_rates.keys()),
+                        "Win Rate": list(win_rates.values()),
+                    })
+                    st.bar_chart(
+                        df.set_index("Regime")["Win Rate"],
+                        width='stretch',
+                        color="#3b82f6",
+                    )
+                    return
+        except Exception:
+            pass
     
-    st.bar_chart(
-        df.set_index("Regime")["Win Rate"],
-        width='stretch',
-        color="#3b82f6",
-    )
+    # Fallback if data not available
+    st.info("Run backtest with VIX data to see win rate by regime.")
 
 
 def render_paper_trading_tracker():
-    """Render paper trading tracker."""
+    """Render paper trading tracker (auto-refreshing)."""
     st.subheader("Paper Trading")
     
+    # M4: Auto-refresh by reading file each time (no cache)
     trades_path = Path("data/paper_trades.json")
     if trades_path.exists():
         try:
@@ -388,9 +419,10 @@ def render_metrics(metrics: dict):
 
 
 def render_equity_curve():
-    """Render equity curve from backtest results."""
+    """Render equity curve from backtest results (auto-refreshing)."""
     st.subheader("Equity Curve (Backtest)")
     
+    # M5: Auto-refresh by reading file each time (no cache)
     results_path = Path("data/backtest_results.csv")
     if results_path.exists():
         try:
@@ -448,11 +480,25 @@ def main():
         stop_loss_pct = st.slider("Stop Loss %", 0.02, 0.08, 0.03, 0.01)
         
         st.markdown("---")
-        st.markdown("**Last Update**")
-        st.markdown(f"`{datetime.now().strftime('%Y-%m-%d %H:%M')}`")
         
-        if st.button("Refresh Signals", width='stretch'):
+        # M3: Fix Last Update timestamp using session state
+        if 'last_fetch_time' not in st.session_state:
+            st.session_state.last_fetch_time = datetime.now()
+        
+        st.markdown("**Last Update**")
+        time_diff = (datetime.now() - st.session_state.last_fetch_time).seconds
+        if time_diff < 60:
+            time_str = f"{time_diff}s ago"
+        elif time_diff < 3600:
+            time_str = f"{time_diff // 60}m ago"
+        else:
+            time_str = f"{time_diff // 3600}h ago"
+        st.markdown(f"`{st.session_state.last_fetch_time.strftime('%Y-%m-%d %H:%M')}` ({time_str})")
+        
+        # M1: Clarify refresh button purpose
+        if st.button("Clear Cache & Refresh", width='stretch', help="Clear cached data and fetch fresh signals"):
             st.cache_data.clear()
+            st.session_state.last_fetch_time = datetime.now()
             st.rerun()
     
     # Get parameters
@@ -464,9 +510,13 @@ def main():
         'stop_loss_pct': stop_loss_pct,
     }
     
-    # Load live data
-    signals, vix_regime, current_vix = get_live_signals(params)
-    metrics = get_backtest_metrics()
+    # H1: Add loading state during data fetch
+    with st.spinner("Fetching live signals..."):
+        signals, vix_regime, current_vix, error = get_live_signals(params)
+        metrics = get_backtest_metrics()
+    
+    # Update fetch timestamp
+    st.session_state.last_fetch_time = datetime.now()
     
     # Header
     render_header()
@@ -477,7 +527,7 @@ def main():
     st.markdown("---")
     
     # Row 2: Signals table
-    render_signals_table(signals)
+    render_signals_table(signals, vix_regime, error)
     
     st.markdown("---")
     
