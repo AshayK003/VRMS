@@ -360,15 +360,6 @@ def render_equity_curve():
 
 def main():
     """Main app entry point."""
-    # Disclaimer banner at top
-    st.warning(
-        "⚠️ **Educational purposes only.** Not financial advice. "
-        "The author is not a SEBI-registered advisor. "
-        "70% of intraday traders lose money (SEBI data). "
-        "You are solely responsible for all trading decisions.",
-        icon="⚠️",
-    )
-    
     # Sidebar
     with st.sidebar:
         st.markdown("### VRMS")
@@ -459,6 +450,16 @@ def main():
         </div>
         """,
         unsafe_allow_html=True,
+    )
+    
+    # Disclaimer at bottom
+    st.markdown("---")
+    st.warning(
+        "⚠️ **Educational purposes only.** Not financial advice. "
+        "The author is not a SEBI-registered advisor. "
+        "70% of intraday traders lose money (SEBI data). "
+        "You are solely responsible for all trading decisions.",
+        icon="⚠️",
     )
 
 
