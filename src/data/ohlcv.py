@@ -47,6 +47,9 @@ def fetch_ohlcv(symbol: str, start_date: str, end_date: str) -> pd.DataFrame:
     demergers) correctly. For demerged tickers (e.g., TATAMOTORS→TMCV.NS),
     the old ticker is delisted — use the new ticker symbol.
     
+    Filters out corporate action days (demergers, splits, bonuses) to
+    prevent feature contamination from price gaps.
+    
     Args:
         symbol: NSE ticker (e.g., 'RELIANCE', 'TCS')
         start_date: Start date in 'YYYY-MM-DD' format
@@ -66,7 +69,13 @@ def fetch_ohlcv(symbol: str, start_date: str, end_date: str) -> pd.DataFrame:
             logger.warning(f"No data returned for {symbol}")
             return pd.DataFrame()
         
-        return _clean_yf_df(df)
+        df = _clean_yf_df(df)
+        
+        # Filter corporate action days to prevent feature contamination
+        from src.data.corporate_actions import filter_corporate_action_days
+        df = filter_corporate_action_days(df, symbol)
+        
+        return df
         
     except Exception as e:
         logger.error(f"Failed to fetch OHLCV for {symbol}: {e}")

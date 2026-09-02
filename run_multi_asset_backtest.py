@@ -1,4 +1,4 @@
-"""Backtest multi-asset VIX screener.
+"""Backtest multi-asset VIX screener — optimized with bulk download + cache.
 
 Tests whether screening Nifty 50 stocks improves returns
 vs just trading Nifty index.
@@ -7,15 +7,15 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import yfinance as yf
 
 from src.screener.multi_asset import (
-    fetch_vix, fetch_stock_data, NIFTY_50,
-    get_vix_regime, compute_momentum, compute_conviction,
-    StockPick,
+    fetch_vix, NIFTY_50,
+    compute_momentum, compute_conviction,
 )
 
 logging.basicConfig(
@@ -25,6 +25,77 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def prefetch_all_data(
+    symbols: list[str],
+    start_date: str,
+    end_date: str,
+    cache_dir: Path = Path(".cache"),
+) -> dict[str, pd.DataFrame]:
+    """Prefetch and cache OHLCV data for all symbols using bulk download.
+    
+    Args:
+        symbols: List of Yahoo Finance tickers
+        start_date: Start date
+        end_date: End date
+        cache_dir: Directory for cached data
+        
+    Returns:
+        Dict mapping symbol to OHLCV DataFrame
+    """
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    all_data = {}
+    
+    # Use yfinance's bulk download (much faster than individual calls)
+    logger.info(f"Bulk downloading {len(symbols)} symbols...")
+    
+    # Download in batches of 10 (yfinance bulk limit)
+    for i in range(0, len(symbols), 10):
+        batch = symbols[i:i+10]
+        try:
+            raw = yf.download(
+                batch,
+                start=start_date,
+                end=end_date,
+                auto_adjust=True,
+                threads=True,
+                group_by="ticker",
+            )
+            
+            for symbol in batch:
+                try:
+                    if len(batch) == 1:
+                        df = raw
+                    else:
+                        df = raw[symbol]
+                    
+                    if df is None or df.empty:
+                        continue
+                    
+                    # Clean and cache
+                    df = df.reset_index()
+                    date_col = 'Date' if 'Date' in df.columns else 'Datetime'
+                    df = df.rename(columns={
+                        date_col: 'Date',
+                        'Open': 'Open', 'High': 'High', 'Low': 'Low',
+                        'Close': 'Close', 'Volume': 'Volume'
+                    })
+                    df['Date'] = pd.to_datetime(df['Date']).dt.tz_localize(None)
+                    df = df.set_index('Date').sort_index()
+                    for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
+                        df[col] = pd.to_numeric(df[col], errors='coerce')
+                    
+                    all_data[symbol] = df[['Open', 'High', 'Low', 'Close', 'Volume']]
+                except Exception as e:
+                    logger.debug(f"Failed to process {symbol}: {e}")
+                    continue
+        except Exception as e:
+            logger.warning(f"Batch download failed: {e}")
+            continue
+    
+    logger.info(f"Prefetched {len(all_data)} symbols")
+    return all_data
+
+
 def backtest_multi_asset(
     start_date: str = "2023-01-01",
     end_date: str = "2024-12-31",
@@ -32,7 +103,7 @@ def backtest_multi_asset(
     stop_loss_pct: float = 0.03,
     transaction_cost: float = 0.003,
 ) -> dict:
-    """Backtest multi-asset screener.
+    """Backtest multi-asset screener with cached data.
     
     For each fear day (VIX > 18):
     1. Screen Nifty 50 stocks
@@ -64,26 +135,26 @@ def backtest_multi_asset(
     if len(fear_days) == 0:
         return {"error": "No fear days found"}
     
+    # Prefetch all stock data (one bulk download)
+    logger.info("Prefetching stock data...")
+    all_stock_data = prefetch_all_data(NIFTY_50, start_date, end_date)
+    
+    if not all_stock_data:
+        return {"error": "No stock data fetched"}
+    
     # Backtest each fear day
     all_trades = []
     
     for fear_day in fear_days:
-        # Get VIX data up to this day
-        vix_until = vix_df[vix_df.index <= fear_day]
-        
-        # Screen stocks
+        # Screen stocks using cached data
         picks = []
-        for symbol in NIFTY_50:
-            df = fetch_stock_data(symbol, period="6mo")
-            if df.empty or len(df) < 50:
-                continue
-            
+        for symbol, df in all_stock_data.items():
             # Filter to data up to fear day
-            df = df[df.index <= fear_day]
-            if len(df) < 50:
+            df_until = df[df.index <= fear_day]
+            if len(df_until) < 50:
                 continue
             
-            mom = compute_momentum(df)
+            mom = compute_momentum(df_until)
             if not mom:
                 continue
             
@@ -111,9 +182,13 @@ def backtest_multi_asset(
         
         # Simulate trades for each pick
         for pick in top_picks:
-            # Get future prices
-            future_data = fetch_stock_data(pick['symbol'], period="1mo")
-            future_data = future_data[future_data.index > fear_day]
+            symbol = pick['symbol']
+            if symbol not in all_stock_data:
+                continue
+            
+            # Get future prices from cached data
+            df = all_stock_data[symbol]
+            future_data = df[df.index > fear_day]
             
             if future_data.empty:
                 continue
@@ -196,8 +271,8 @@ def backtest_multi_asset(
 
 def main():
     """Run the backtest."""
-    print("Running multi-asset backtest...")
-    print("This may take a few minutes (fetching data for 50 stocks)...")
+    print("Running multi-asset backtest (optimized)...")
+    print("Using bulk download + cache for speed...")
     
     result = backtest_multi_asset()
     
