@@ -40,7 +40,7 @@ class StockPick:
 NIFTY_50 = [
     'RELIANCE.NS', 'TCS.NS', 'HDFCBANK.NS', 'INFY.NS', 'HINDUNILVR.NS',
     'ICICIBANK.NS', 'SBIN.NS', 'ITC.NS', 'BHARTIARTL.NS', 'LICI.NS',
-    'HCLTECH.NS', 'ASIANPAINT.NS', 'KOTAKBANK.NS', 'MARUTI.NS', 'TATAMOTORS.NS',
+    'HCLTECH.NS', 'ASIANPAINT.NS', 'KOTAKBANK.NS', 'MARUTI.NS', 'TATAMOTORS',
     'SUNPHARMA.NS', 'TITAN.NS', 'AXISBANK.NS', 'WIPRO.NS', 'NESTLEIND.NS',
     'ULTRACEMCO.NS', 'BAJFINANCE.NS', 'ONGC.NS', 'ADANIPORTS.NS', 'POWERGRID.NS',
     'NTPC.NS', 'TATASTEEL.NS', 'JSWSTEEL.NS', 'COALINDIA.NS', 'GRASIM.NS',
@@ -52,32 +52,29 @@ NIFTY_50 = [
 
 
 def fetch_stock_data(symbol: str, period: str = "6mo") -> pd.DataFrame:
-    """Fetch OHLCV data for a stock."""
-    try:
-        ticker = yf.Ticker(symbol)
-        df = ticker.history(period=period)
-        
-        if df is None or df.empty:
-            return pd.DataFrame()
-        
-        df = df.reset_index()
-        date_col = 'Date' if 'Date' in df.columns else 'Datetime'
-        df = df.rename(columns={
-            date_col: 'Date',
-            'Open': 'Open', 'High': 'High', 'Low': 'Low',
-            'Close': 'Close', 'Volume': 'Volume'
-        })
-        df['Date'] = pd.to_datetime(df['Date']).dt.tz_localize(None)
-        df = df.set_index('Date').sort_index()
-        
-        for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
-            df[col] = pd.to_numeric(df[col], errors='coerce')
-        
-        return df[['Open', 'High', 'Low', 'Close', 'Volume']]
-        
-    except Exception as e:
-        logger.debug(f"Failed to fetch {symbol}: {e}")
-        return pd.DataFrame()
+    """Fetch OHLCV data for a stock with candidate suffix fallback."""
+    candidates = [symbol, f"{symbol}.NS", f"{symbol}.BO"]
+    for sym in candidates:
+        try:
+            ticker = yf.Ticker(sym)
+            df = ticker.history(period=period)
+            if df is not None and not df.empty and len(df) >= 50:
+                df = df.reset_index()
+                date_col = 'Date' if 'Date' in df.columns else 'Datetime'
+                df = df.rename(columns={
+                    date_col: 'Date',
+                    'Open': 'Open', 'High': 'High', 'Low': 'Low',
+                    'Close': 'Close', 'Volume': 'Volume'
+                })
+                df['Date'] = pd.to_datetime(df['Date']).dt.tz_localize(None)
+                df = df.set_index('Date').sort_index()
+                for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
+                    df[col] = pd.to_numeric(df[col], errors='coerce')
+                return df[['Open', 'High', 'Low', 'Close', 'Volume']]
+        except Exception:
+            continue
+    logger.debug(f"Failed to fetch {symbol}")
+    return pd.DataFrame()
 
 
 def fetch_vix(period: str = "6mo") -> pd.DataFrame:

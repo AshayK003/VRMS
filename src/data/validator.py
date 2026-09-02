@@ -61,6 +61,10 @@ class DataValidator:
         if df['Close'].std() == 0:
             return False, "Flat line - possibly delisted"
         
+        # Check for suspicious prices
+        if (df['Close'] < 1).any() or (df['Close'] > 100000).any():
+            return False, "Suspicious price range"
+        
         # Check for OHLC consistency
         if not (df['High'] >= df['Low']).all():
             return False, "High < Low detected"

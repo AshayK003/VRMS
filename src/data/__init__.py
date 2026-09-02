@@ -7,7 +7,7 @@ from .corporate_actions import is_corporate_action_day, filter_corporate_action_
 
 __all__ = [
     'fetch_ohlcv',
-    'fetch_intraday',
+    
     'fetch_vix',
     'fetch_fii_dii',
     'get_fii_dii_lagged',
