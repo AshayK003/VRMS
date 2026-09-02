@@ -1,0 +1,16 @@
+{
+  "capital": 100000,
+  "cash": 100000,
+  "positions": [],
+  "closed_trades": [],
+  "equity_curve": [
+    {
+      "date": "2026-09-02",
+      "equity": 100000
+    },
+    {
+      "date": "2026-09-02",
+      "equity": 100000
+    }
+  ]
+}
