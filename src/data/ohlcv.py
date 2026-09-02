@@ -43,6 +43,10 @@ def _clean_yf_df(df: pd.DataFrame) -> pd.DataFrame:
 def fetch_ohlcv(symbol: str, start_date: str, end_date: str) -> pd.DataFrame:
     """Fetch daily OHLCV data for a symbol from Yahoo Finance.
     
+    Uses auto_adjust=True to handle corporate actions (splits, dividends,
+    demergers) correctly. For demerged tickers (e.g., TATAMOTORS→TMCV),
+    the old ticker may be delisted — use the new ticker symbol.
+    
     Args:
         symbol: NSE ticker (e.g., 'RELIANCE', 'TCS')
         start_date: Start date in 'YYYY-MM-DD' format
@@ -55,7 +59,8 @@ def fetch_ohlcv(symbol: str, start_date: str, end_date: str) -> pd.DataFrame:
         import yfinance as yf
         
         ticker = yf.Ticker(f"{symbol}.NS")
-        df = ticker.history(start=start_date, end=end_date)
+        # auto_adjust=True ensures corporate action adjustments are applied
+        df = ticker.history(start=start_date, end=end_date, auto_adjust=True)
         
         if df is None or df.empty:
             logger.warning(f"No data returned for {symbol}")

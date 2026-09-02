@@ -14,13 +14,16 @@ logger = logging.getLogger(__name__)
 
 # Historical Nifty 50 constituents (semi-annual rebalancing)
 # Source: NSE press releases, compiled manually
+# NOTE: TATAMOTORS demerged into TMCV (Tata Motors PV) in Jul 2024.
+#       All constituent lists updated to use TMCV (post-demerger entity).
+#       Old TATAMOTORS data is unavailable on Yahoo Finance (delisted).
 # Format: {effective_date: [list of symbols]}
 NIFTY_50_CONSTITUENTS = {
     # 2024
     '2024-01-01': [
         'RELIANCE', 'TCS', 'HDFCBANK', 'INFY', 'HINDUNILVR', 'ICICIBANK', 'SBIN',
         'ITC', 'BHARTIARTL', 'LICI', 'HCLTECH', 'ASIANPAINT', 'KOTAKBANK',
-        'MARUTI', 'TATAMOTORS', 'SUNPHARMA', 'TITAN', 'AXISBANK', 'WIPRO',
+        'MARUTI', 'TMCV', 'SUNPHARMA', 'TITAN', 'AXISBANK', 'WIPRO',
         'NESTLEIND', 'ULTRACEMCO', 'BAJFINANCE', 'ONGC', 'ADANIPORTS',
         'POWERGRID', 'NTPC', 'TATASTEEL', 'JSWSTEEL', 'COALINDIA', 'GRASIM',
         'TECHM', 'CIPLA', 'DRREDDY', 'BRITANNIA', 'HEROMOTOCO', 'EICHERMOT',
@@ -31,7 +34,7 @@ NIFTY_50_CONSTITUENTS = {
     '2024-07-01': [
         'RELIANCE', 'TCS', 'HDFCBANK', 'INFY', 'HINDUNILVR', 'ICICIBANK', 'SBIN',
         'ITC', 'BHARTIARTL', 'LICI', 'HCLTECH', 'ASIANPAINT', 'KOTAKBANK',
-        'MARUTI', 'TATAMOTORS', 'SUNPHARMA', 'TITAN', 'AXISBANK', 'WIPRO',
+        'MARUTI', 'TMCV', 'SUNPHARMA', 'TITAN', 'AXISBANK', 'WIPRO',
         'NESTLEIND', 'ULTRACEMCO', 'BAJFINANCE', 'ONGC', 'ADANIPORTS',
         'POWERGRID', 'NTPC', 'TATASTEEL', 'JSWSTEEL', 'COALINDIA', 'GRASIM',
         'TECHM', 'CIPLA', 'DRREDDY', 'BRITANNIA', 'HEROMOTOCO', 'EICHERMOT',
@@ -43,7 +46,7 @@ NIFTY_50_CONSTITUENTS = {
     '2025-01-01': [
         'RELIANCE', 'TCS', 'HDFCBANK', 'INFY', 'HINDUNILVR', 'ICICIBANK', 'SBIN',
         'ITC', 'BHARTIARTL', 'LICI', 'HCLTECH', 'ASIANPAINT', 'KOTAKBANK',
-        'MARUTI', 'TATAMOTORS', 'SUNPHARMA', 'TITAN', 'AXISBANK', 'WIPRO',
+        'MARUTI', 'TMCV', 'SUNPHARMA', 'TITAN', 'AXISBANK', 'WIPRO',
         'NESTLEIND', 'ULTRACEMCO', 'BAJFINANCE', 'ONGC', 'ADANIPORTS',
         'POWERGRID', 'NTPC', 'TATASTEEL', 'JSWSTEEL', 'COALINDIA', 'GRASIM',
         'TECHM', 'CIPLA', 'DRREDDY', 'BRITANNIA', 'HEROMOTOCO', 'EICHERMOT',
@@ -54,7 +57,7 @@ NIFTY_50_CONSTITUENTS = {
     '2025-07-01': [
         'RELIANCE', 'TCS', 'HDFCBANK', 'INFY', 'HINDUNILVR', 'ICICIBANK', 'SBIN',
         'ITC', 'BHARTIARTL', 'LICI', 'HCLTECH', 'ASIANPAINT', 'KOTAKBANK',
-        'MARUTI', 'TATAMOTORS', 'SUNPHARMA', 'TITAN', 'AXISBANK', 'WIPRO',
+        'MARUTI', 'TMCV', 'SUNPHARMA', 'TITAN', 'AXISBANK', 'WIPRO',
         'NESTLEIND', 'ULTRACEMCO', 'BAJFINANCE', 'ONGC', 'ADANIPORTS',
         'POWERGRID', 'NTPC', 'TATASTEEL', 'JSWSTEEL', 'COALINDIA', 'GRASIM',
         'TECHM', 'CIPLA', 'DRREDDY', 'BRITANNIA', 'HEROMOTOCO', 'EICHERMOT',

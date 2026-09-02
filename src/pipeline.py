@@ -13,6 +13,13 @@ import pandas as pd
 from sklearn.decomposition import PCA
 
 from src.data.ohlcv import fetch_ohlcv, get_benchmark, fetch_vix
+from src.data.constituents import get_constituents_on_date
+
+# Ticker aliases for demerged/rename symbols
+# Maps old/delisted tickers to current active tickers
+TICKER_ALIASES = {
+    'TATAMOTORS': 'TMCV.NS',  # Demerged Jul 2024 → Tata Motors PV
+}
 from src.data.fii_dii import fetch_fii_dii
 from src.data.constituents import get_constituents_on_date
 from src.data.validator import DataValidator
