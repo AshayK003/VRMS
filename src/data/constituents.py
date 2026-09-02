@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 # Historical Nifty 50 constituents (semi-annual rebalancing)
 # Source: NSE press releases, compiled manually
-# NOTE: TATAMOTORS demerged into TMCV (Tata Motors PV) in Jul 2024.
+# NOTE: TATAMOTORS demerged into TMCV (Tata Motors PV) in Nov 2025.
 #       All constituent lists updated to use TMCV (post-demerger entity).
 #       Old TATAMOTORS data is unavailable on Yahoo Finance (delisted).
 # Format: {effective_date: [list of symbols]}

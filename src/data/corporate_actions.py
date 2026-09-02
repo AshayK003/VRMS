@@ -16,13 +16,13 @@ logger = logging.getLogger(__name__)
 # Action types: SPLIT, BONUS, DIVIDEND, RIGHTS, MERGER, DEMERGER
 CORPORATE_ACTIONS = {
     'TMCV': {
-        'DEMERGER': ['2024-07-31'],  # Tata Motors demerged into TMCV (PV)
+        'DEMERGER': ['2025-11-14'],  # Tata Motors demerged: TMCV (PV) + TMC (CV)
         'SPLIT': [],
         'BONUS': [],
-        'DIVIDEND': ['2024-06-14', '2024-12-16', '2025-06-13']
+        'DIVIDEND': ['2025-06-13', '2025-12-16', '2026-06-13']
     },
     'TATAMOTORS': {  # Legacy ticker (delisted post-demerger)
-        'DEMERGER': ['2024-07-31'],
+        'DEMERGER': ['2025-11-14'],
         'SPLIT': [],
         'BONUS': [],
         'DIVIDEND': []

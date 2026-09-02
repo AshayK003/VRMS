@@ -44,8 +44,8 @@ def fetch_ohlcv(symbol: str, start_date: str, end_date: str) -> pd.DataFrame:
     """Fetch daily OHLCV data for a symbol from Yahoo Finance.
     
     Uses auto_adjust=True to handle corporate actions (splits, dividends,
-    demergers) correctly. For demerged tickers (e.g., TATAMOTORS→TMCV),
-    the old ticker may be delisted — use the new ticker symbol.
+    demergers) correctly. For demerged tickers (e.g., TATAMOTORS→TMCV.NS),
+    the old ticker is delisted — use the new ticker symbol.
     
     Args:
         symbol: NSE ticker (e.g., 'RELIANCE', 'TCS')

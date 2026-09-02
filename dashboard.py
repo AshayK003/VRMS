@@ -59,7 +59,7 @@ def load_sample_data() -> dict:
     # Sample signals
     signals = [
         {
-            "symbol": "TATAMOTORS",
+            "symbol": "TMCV",
             "direction": "LONG",
             "probability": 0.72,
             "score": 0.68,
