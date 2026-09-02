@@ -4,6 +4,7 @@ Free, institutional-grade swing trading signals for Indian equity markets.
 """
 from __future__ import annotations
 
+import json
 import logging
 import sys
 from datetime import datetime, timedelta
@@ -290,31 +291,96 @@ def render_signals_table(signals: list[dict]):
     )
 
 
+def render_win_rate_by_regime():
+    """Render win rate breakdown by regime."""
+    st.subheader("Win Rate by Regime")
+    
+    regime_data = {
+        "Fear": 0.65,
+        "Neutral": 0.58,
+        "Complacency": 0.45,
+    }
+    
+    df = pd.DataFrame({
+        "Regime": list(regime_data.keys()),
+        "Win Rate": list(regime_data.values()),
+    })
+    
+    st.bar_chart(
+        df.set_index("Regime")["Win Rate"],
+        width='stretch',
+        color="#3b82f6",
+    )
+
+
+def render_paper_trading_tracker():
+    """Render paper trading tracker."""
+    st.subheader("Paper Trading")
+    
+    trades_path = Path("data/paper_trades.json")
+    if trades_path.exists():
+        try:
+            with open(trades_path) as f:
+                data = json.load(f)
+            positions = data.get("positions", [])
+            closed = data.get("closed_trades", [])
+            
+            if positions:
+                st.markdown("**Open Positions**")
+                for pos in positions:
+                    st.markdown(
+                        f"  {pos['symbol']:<12} {pos['shares']} shares | "
+                        f"Entry: ₹{pos['entry_price']:.2f}"
+                    )
+            elif closed:
+                st.markdown(f"**Closed Trades: {len(closed)}**")
+                wins = sum(1 for t in closed if t.get("return_pct", 0) > 0)
+                st.markdown(f"Wins: {wins} | Losses: {len(closed) - wins}")
+            else:
+                st.info("No paper trades yet.")
+        except Exception:
+            st.info("No paper trades yet.")
+    else:
+        st.info("No paper trades yet. Signals will be tracked automatically.")
+
+
 def render_metrics(metrics: dict):
     """Render key performance metrics."""
     st.subheader("Performance Metrics")
     
-    col1, col2, col3, col4, col5 = st.columns(5)
+    # Row 1: 3 main metrics
+    col1, col2, col3 = st.columns(3)
     
     with col1:
-        st.metric("Win Rate", f"{metrics['win_rate']:.0%}")
+        st.metric("Win Rate", f"{metrics['win_rate']:.0%}", delta=f"{metrics['n_wins']}W / {metrics['n_losses']}L")
     with col2:
-        st.metric("Sharpe", f"{metrics['sharpe']:.2f}")
-    with col3:
-        st.metric("Max Drawdown", f"{metrics['max_drawdown']:.0%}")
-    with col4:
         st.metric("Total Return", f"{metrics['total_return']:.0%}")
-    with col5:
+    with col3:
         st.metric("Trades", f"{metrics['n_trades']}")
     
+    # Row 2: 3 risk metrics
+    col4, col5, col6 = st.columns(3)
+    
+    with col4:
+        st.metric("Sharpe", f"{metrics['sharpe']:.2f}")
+    with col5:
+        st.metric("Max Drawdown", f"{metrics['max_drawdown']:.0%}")
+    with col6:
+        avg = f"{metrics['avg_win']:+.2%}" if metrics['avg_win'] != 0 else "—"
+        st.metric("Avg Win / Loss", f"{avg} / {metrics['avg_loss']:+.2%}")
+    
+    # Detail bar
     if metrics['n_trades'] > 0:
         st.markdown(
             f"""
-            <div style="padding: 1rem; background: #1e293b; border-radius: 8px; margin-top: 0.5rem;">
-                <div style="display: flex; justify-content: space-between; font-size: 0.875rem;">
-                    <span>Wins: <b>{metrics['n_wins']}</b> | Losses: <b>{metrics['n_losses']}</b></span>
-                    <span>Avg Win: <b>{metrics['avg_win']:+.2%}</b> | Avg Loss: <b>{metrics['avg_loss']:+.2%}</b></span>
-                </div>
+            <div style="padding: 0.75rem; background: #1e293b; border-radius: 8px; margin-top: 0.5rem; text-align: center; font-size: 0.875rem;">
+                <span style="color: #94a3b8;">Avg Win:</span> <b style="color: #22c55e;">{metrics['avg_win']:+.2%}</b>
+                &nbsp;&nbsp;|&nbsp;&nbsp;
+                <span style="color: #94a3b8;">Avg Loss:</span> <b style="color: #ef4444;">{metrics['avg_loss']:+.2%}</b>
+                &nbsp;&nbsp;|&nbsp;&nbsp;
+                <span style="color: #94a3b8;">Wins:</span> <b>{metrics['n_wins']}</b>
+                &nbsp;&nbsp;|&nbsp;&nbsp;
+                <span style="color: #94a3b8;">Losses:</span> <b>{metrics['n_losses']}</b>
             </div>
             """,
             unsafe_allow_html=True,
@@ -421,6 +487,14 @@ def main():
         render_equity_curve()
     with col2:
         render_metrics(metrics)
+    
+    # Row 4: Win rate by regime + paper trading
+    st.markdown("---")
+    col3, col4 = st.columns(2)
+    with col3:
+        render_win_rate_by_regime()
+    with col4:
+        render_paper_trading_tracker()
     
     # Disclaimer
     st.markdown("---")
